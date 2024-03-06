@@ -25,12 +25,13 @@ api.post('/idea', checkPermission('stytch.self', '*'), async (req, res) => {
 	const memberId = req.cookies.stytch_member_id;
 	const currentMember = await getUser(memberId);
 
-	if (!currentMember?.name) {
-		const member = await stytch.organizations.members.get({
+	if (!currentMember?.id) {
+		const { member } = await stytch.organizations.members.get({
 			organization_id: orgId,
 			member_id: memberId,
 		});
-		await addUser({ id: member.member_id, name: member.member.name });
+
+		await addUser({ id: member.member_id, name: member.name });
 	}
 
 	const result = await addIdea({
