@@ -54,6 +54,64 @@ function getCookie(name: string) {
 	return decodeURIComponent(value);
 }
 
+const OrgSwitcher = () => {
+	const { member } = useStytchMember();
+	const { isPending, error, data } = useQuery({
+		queryKey: ['/api/teams'],
+		queryFn: () => {
+			const api = new URL('/api/teams', import.meta.env.PUBLIC_API_URL);
+
+			return fetch(api, { credentials: 'include' })
+				.then((res) => res.json())
+				.catch((error) => {
+					throw new Error(error);
+				});
+		},
+		staleTime: 60_000,
+	});
+
+	if (isPending || error) {
+		return null;
+	}
+
+	return (
+		<form
+			className={styles.orgSelector}
+			action={new URL(
+				'/auth/switch-team',
+				import.meta.env.PUBLIC_API_URL,
+			).toString()}
+			method="POST"
+			onChange={(e) => {
+				const data = new FormData(e.currentTarget);
+				const organization_id = data.get('organization_id');
+
+				if (organization_id === member?.organization_id) {
+					return;
+				}
+
+				e.currentTarget.submit();
+			}}
+		>
+			<select defaultValue={member?.organization_id} name="organization_id">
+				<optgroup label="Your Teams">
+					{data.map((team: any) => {
+						return (
+							<option key={team.id} value={team.id}>
+								{team.name}
+							</option>
+						);
+					})}
+				</optgroup>
+
+				<optgroup label="Options">
+					<option value="new">create a new team</option>
+				</optgroup>
+			</select>
+		</form>
+	);
+};
+
 const Layout = () => {
 	const { session } = useStytchMemberSession();
 
@@ -73,6 +131,8 @@ const Layout = () => {
 
 				{session?.member_id ? (
 					<>
+						<OrgSwitcher />
+
 						<h3>Dashboard</h3>
 						<nav>
 							<Link to="/dashboard">View all ideas &rarr;</Link>
@@ -83,14 +143,6 @@ const Layout = () => {
 						<nav>
 							<Link to="/dashboard/team">Team Members</Link>
 							<Link to="/dashboard/team-settings">Team Settings</Link>
-							<a
-								href={new URL(
-									'/auth/logout',
-									import.meta.env.PUBLIC_API_URL,
-								).toString()}
-							>
-								Switch Teams
-							</a>
 						</nav>
 
 						<h3>Account</h3>

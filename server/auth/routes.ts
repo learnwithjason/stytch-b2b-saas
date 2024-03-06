@@ -97,6 +97,33 @@ auth.get('/select-team', async (req, res) => {
 	res.redirect(303, new URL('/dashboard', process.env.APP_URL).toString());
 });
 
+auth.post('/switch-team', async (req, res) => {
+	if (req.body.organization_id === 'new') {
+		res.redirect('/auth/logout');
+	}
+
+	const stytch = loadStytch();
+
+	const result = await stytch.sessions.exchange({
+		organization_id: req.body.organization_id,
+		session_token: req.cookies.stytch_session,
+	});
+
+	// if there’s a problem (e.g. auth methods don’t match) we need to auth again
+	if (result.status_code !== 200) {
+		res.redirect('/auth/logout');
+	}
+
+	res.cookie('stytch_member_id', result.member_id, { path: '/' });
+	res.cookie('stytch_org_id', result.organization.organization_id, {
+		path: '/',
+	});
+	res.cookie('stytch_session', result.session_token, { path: '/' });
+	res.cookie('stytch_session_jwt', result.session_jwt, { path: '/' });
+
+	res.redirect(303, new URL('/dashboard', process.env.APP_URL).toString());
+});
+
 /*
  * If no organization exists:
  * Step 3: create a new organization for the user
