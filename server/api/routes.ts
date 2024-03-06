@@ -5,6 +5,7 @@ import {
 	deleteIdea,
 	getUser,
 	addUser,
+	updateUserName,
 } from '../db/index.js';
 import { checkPermission, loadStytch } from '../auth/index.js';
 
@@ -187,6 +188,8 @@ api.post('/account', checkPermission('stytch.self', '*'), async (req, res) => {
 		member_id: req.cookies.stytch_member_id,
 		name: req.body.name,
 	});
+
+	await updateUserName(req.cookies.stytch_member_id, req.body.name);
 
 	if (response.status_code !== 200) {
 		res.sendStatus(response.status_code);

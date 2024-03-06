@@ -26,6 +26,10 @@ export async function getUser(userId: NewUser['id']): Promise<User> {
 	return result.at(0)!;
 }
 
+export async function updateUserName(userId: User['id'], name: User['name']) {
+	await db.update(users).set({ name }).where(eq(users.id, userId));
+}
+
 export async function addIdea(idea: NewIdea) {
 	return await db.insert(ideas).values(idea).returning();
 }
