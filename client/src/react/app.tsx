@@ -55,6 +55,8 @@ function getCookie(name: string) {
 }
 
 const Layout = () => {
+	const { session } = useStytchMemberSession();
+
 	return (
 		<main className={styles.dashboard}>
 			<section className={styles.page}>
@@ -69,38 +71,42 @@ const Layout = () => {
 					</a>
 				</div>
 
-				<h3>Dashboard</h3>
-				<nav>
-					<Link to="/dashboard">View all ideas &rarr;</Link>
-					<Link to="/dashboard/add">Add Idea +</Link>
-				</nav>
+				{session?.member_id ? (
+					<>
+						<h3>Dashboard</h3>
+						<nav>
+							<Link to="/dashboard">View all ideas &rarr;</Link>
+							<Link to="/dashboard/add">Add Idea +</Link>
+						</nav>
 
-				<h3>Team</h3>
-				<nav>
-					<Link to="/dashboard/team">Team Members</Link>
-					<Link to="/dashboard/team-settings">Team Settings</Link>
-					<a
-						href={new URL(
-							'/auth/logout',
-							import.meta.env.PUBLIC_API_URL,
-						).toString()}
-					>
-						Switch Teams
-					</a>
-				</nav>
+						<h3>Team</h3>
+						<nav>
+							<Link to="/dashboard/team">Team Members</Link>
+							<Link to="/dashboard/team-settings">Team Settings</Link>
+							<a
+								href={new URL(
+									'/auth/logout',
+									import.meta.env.PUBLIC_API_URL,
+								).toString()}
+							>
+								Switch Teams
+							</a>
+						</nav>
 
-				<h3>Account</h3>
-				<nav>
-					<Link to="/dashboard/account">Account Settings</Link>
-					<a
-						href={new URL(
-							'/auth/logout',
-							import.meta.env.PUBLIC_API_URL,
-						).toString()}
-					>
-						Log Out
-					</a>
-				</nav>
+						<h3>Account</h3>
+						<nav>
+							<Link to="/dashboard/account">Account Settings</Link>
+							<a
+								href={new URL(
+									'/auth/logout',
+									import.meta.env.PUBLIC_API_URL,
+								).toString()}
+							>
+								Log Out
+							</a>
+						</nav>
+					</>
+				) : null}
 			</aside>
 		</main>
 	);
