@@ -12,10 +12,6 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-app.get('/', async (_req, res) => {
-	res.send('TODO: what should happen if someone visits the API directly?');
-});
-
 app.use('/api', api);
 app.use('/auth', auth);
 

@@ -2,7 +2,6 @@
 import { Image } from 'astro:assets';
 import Layout from './base.astro';
 import logo from '../images/squircle-logo.png';
-import avatar from '../images/avatar.jpg';
 
 export interface Props {
 	title: string;
@@ -21,21 +20,15 @@ const { title } = Astro.props;
 		<nav>
 			<a href="/">Product</a>
 			<a href="/dashboard">Dashboard</a>
-			<a href="/dashboard/account">
-				<Image
-					src={avatar}
-					alt="Jane Developer's avatar"
-					width="60"
-					height="60"
-				/>
-			</a>
 		</nav>
 	</header>
 
 	<slot />
 
 	<footer>
-		<a href="#TODO-add-github-link">source code</a>
+		<a href="https://github.com/stytchauth/stytch-b2b-saas-example"
+			>source code</a
+		>
 		<a href="https://stytch.com/">Stytch auth</a>
 	</footer>
 </Layout>

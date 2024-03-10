@@ -1,6 +1,6 @@
 {
 	"engines": {
-		"node": ">=18.11"
+		"node": ">=20.6.0"
 	},
 	"type": "module",
 	"name": "stytch-b2b-saas-server",
@@ -8,7 +8,6 @@
 	"description": "An example backend for a B2B app using Stytch for user and organization management.",
 	"main": "index.js",
 	"scripts": {
-		"db:generate": "drizzle-kit generate:sqlite",
 		"db:push": "drizzle-kit push:sqlite",
 		"db:studio": "drizzle-kit studio",
 		"build": "npx tsc",
