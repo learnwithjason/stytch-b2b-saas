@@ -1,4 +1,4 @@
-/*
+/**
  * Why is this whole app jammed into a single file?
  * ================================================
  *
@@ -11,9 +11,16 @@
  *
  * Once you’ve seen how the Stytch auth components are used, you can safely
  * remove all of this code and replace it with your own app.
+ *
+ * Important code to review:
+ *
+ *  - {@link OrgSwitcher} — component for listing the current member’s
+ * 		organizations & allowing them to switch between them (or create new ones)
+ *  - {@link RequireAuth} — a wrapper component that only displays its children
+ * 		if a valid member session is detected
  */
 
-import React, { useState, type ReactNode, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
 	Routes,
 	Route,
@@ -22,17 +29,12 @@ import {
 	BrowserRouter,
 	useNavigate,
 	useLocation,
-	Navigate,
 } from 'react-router-dom';
 import {
 	QueryClient,
 	QueryClientProvider,
-	useMutation,
 	useQuery,
-	useQueryClient,
 } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-
 import {
 	StytchB2BProvider,
 	useStytchB2BClient,
@@ -42,30 +44,24 @@ import {
 } from '@stytch/react/b2b';
 import { StytchB2BHeadlessClient } from '@stytch/vanilla-js/b2b/headless';
 
-import { Idea } from './components/idea';
+import * as Pages from './components/pages';
 import logo from '../images/squircle-logo-purple.png';
 import styles from './app.module.css';
 
-function getCookie(name: string) {
-	const cookies = document.cookie.split('; ');
-	const cookie = cookies.find((c) => c.startsWith(`${name}=`));
-	const value = cookie?.split('=').at(1) ?? '';
-
-	return decodeURIComponent(value);
-}
-
+/**
+ * This component is a bare bones organization switcher that shows a list of
+ * every organization the current member is part of and selects the one they’re
+ * currently authed into.
+ *
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/discovery
+ */
 const OrgSwitcher = () => {
 	const { member } = useStytchMember();
 	const { isPending, error, data } = useQuery({
-		queryKey: ['/api/teams'],
+		queryKey: ['stytch:organizations:list', member?.member_id],
 		queryFn: () => {
-			const api = new URL('/api/teams', import.meta.env.PUBLIC_API_URL);
-
-			return fetch(api, { credentials: 'include' })
-				.then((res) => res.json())
-				.catch((error) => {
-					throw new Error(error);
-				});
+			// load the current member’s organizations using the Stytch React SDK
+			return stytchClient.discovery.organizations.list();
 		},
 		staleTime: 60_000,
 	});
@@ -83,22 +79,21 @@ const OrgSwitcher = () => {
 			).toString()}
 			method="POST"
 			onChange={(e) => {
-				const data = new FormData(e.currentTarget);
-				const organization_id = data.get('organization_id');
-
-				if (organization_id === member?.organization_id) {
-					return;
-				}
-
+				/*
+				 * To avoid a two-step process, submit the form immediately when a new
+				 * option is selected.
+				 */
 				e.currentTarget.submit();
 			}}
 		>
 			<select defaultValue={member?.organization_id} name="organization_id">
 				<optgroup label="Your Teams">
-					{data.map((team: any) => {
+					{data.discovered_organizations.map((team) => {
+						const orgId = team.organization.organization_id;
+
 						return (
-							<option key={team.id} value={team.id}>
-								{team.name}
+							<option key={orgId} value={orgId}>
+								{team.organization.organization_name}
 							</option>
 						);
 					})}
@@ -112,6 +107,50 @@ const OrgSwitcher = () => {
 	);
 };
 
+/**
+ * This component loads the current member session and will only display its
+ * children if one is found.
+ *
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/session-management#get-session
+ */
+function RequireAuth({ children }: { children: React.ReactNode }) {
+	const { session } = useStytchMemberSession();
+	const [redirectTimeout, setRedirectTimeout] = useState<number>();
+	const navigate = useNavigate();
+	let location = useLocation();
+
+	// TODO should be able to use an isInitialized flag here
+	useEffect(() => {
+		if (!session) {
+			const timeoutId = setTimeout(() => {
+				navigate('/dashboard/login', {
+					state: {
+						from: location,
+					},
+					replace: true,
+				});
+			}, 1000);
+
+			setRedirectTimeout((prevId) => {
+				clearInterval(prevId);
+				return timeoutId;
+			});
+		} else {
+			clearTimeout(redirectTimeout);
+			setRedirectTimeout(undefined);
+		}
+	}, [session]);
+
+	return session ? children : null;
+}
+
+/**
+ * This component has global layout, including the dashboard sidebar. Some of
+ * this UI is only available to logged-in members, so we need to check for a
+ * valid session before showing it.
+ *
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/session-management#get-session
+ */
 const Layout = () => {
 	const { session } = useStytchMemberSession();
 
@@ -122,7 +161,7 @@ const Layout = () => {
 			</section>
 
 			<aside className={styles.sidebar}>
-				<div className={styles['sidebar-header']}>
+				<div className={styles.sidebarHeader}>
 					<a href="/" rel="home">
 						<img {...logo} alt="Squircle logo" width="36" height="36" />
 						Squircle
@@ -164,337 +203,110 @@ const Layout = () => {
 	);
 };
 
-const Header = ({ heading }: { heading: string }) => {
-	return (
-		<header>
-			<h1>{heading}</h1>
-		</header>
-	);
-};
+/**
+ * For pages that are only available to authorized members, we wrap them in the
+ * {@link RequireAuth} component.
+ */
+const DashboardHome = () => (
+	<RequireAuth>
+		<Pages.Home />
+	</RequireAuth>
+);
 
-function RequireAuth({ children }: { children: ReactNode }) {
-	const { session, fromCache } = useStytchMemberSession();
-	const [redirectTimeout, setRedirectTimeout] = useState<number>();
-	const navigate = useNavigate();
-	let location = useLocation();
-
-	useEffect(() => {
-		if (!session) {
-			const timeoutId = setTimeout(() => {
-				navigate('/dashboard/login', {
-					state: {
-						from: location,
-					},
-					replace: true,
-				});
-			}, 1000);
-
-			setRedirectTimeout((prevId) => {
-				clearInterval(prevId);
-				return timeoutId;
-			});
-		} else {
-			clearTimeout(redirectTimeout);
-			setRedirectTimeout(undefined);
-		}
-	}, [session, fromCache]);
-
-	return session ? children : null;
-}
-
-const PageWithQuery = ({
-	heading,
-	apiRoute,
-	staleTime,
-	children,
-}: {
-	heading: string;
-	apiRoute: string;
-	staleTime?: number;
-	children?({
-		data,
-		isPending,
-		error,
-	}: {
-		data: any;
-		isPending: boolean;
-		error: any;
-	}): any;
-}) => {
-	const { isPending, error, data } = useQuery({
-		queryKey: [apiRoute],
-		queryFn: () => {
-			const api = new URL(apiRoute, import.meta.env.PUBLIC_API_URL);
-
-			return fetch(api, { credentials: 'include' })
-				.then((res) => res.json())
-				.catch((error) => {
-					throw new Error(error);
-				});
-		},
-		staleTime,
-	});
-
-	if (isPending) {
-		return (
-			<div>
-				<p>loading...</p>
-			</div>
-		);
-	}
-
-	if (error) {
-		return <pre>{JSON.stringify(error, null, 2)}</pre>;
-	}
-
-	return (
-		<>
-			<Header heading={heading} />
-
-			{children ? (
-				children({ data, isPending, error })
-			) : (
-				<div>
-					<details>
-						<summary>Debug info:</summary>
-						<pre>{JSON.stringify(data, null, 2)}</pre>
-					</details>
-				</div>
-			)}
-		</>
-	);
-};
-
-const DashboardHome = () => {
-	return (
-		<RequireAuth>
-			<PageWithQuery
-				heading="Ideas"
-				apiRoute="/api/ideas"
-				staleTime={1000 * 60}
-			>
-				{({ data }) => {
-					if (data.message) {
-						return (
-							<div>
-								<p>{data.message}</p>
-							</div>
-						);
-					}
-
-					return (
-						<ul className={styles.ideas}>
-							{data.map((idea: Idea) => (
-								<Idea key={idea.id} {...idea} />
-							))}
-						</ul>
-					);
-				}}
-			</PageWithQuery>
-		</RequireAuth>
-	);
-};
-
+/**
+ * If a page needs access to the current member’s details, the
+ * {@link useStytchMember} hook provides current member data.
+ *
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/members#get-member
+ */
 const DashboardAdd = () => {
-	const navigate = useNavigate();
-	const queryClient = useQueryClient();
 	const { member } = useStytchMember();
 
-	const api = new URL('/api/idea', import.meta.env.PUBLIC_API_URL);
-	const addIdea = useMutation({
-		mutationFn: ({ text }: { text: string }) => {
-			const data = new URLSearchParams();
-			data.append('text', text);
-
-			return fetch(api, {
-				method: 'post',
-				body: data,
-				credentials: 'include',
-			}).then((res) => res.json());
-		},
-		onSuccess: async (newIdea) => {
-			await queryClient.cancelQueries({ queryKey: ['/api/ideas'] });
-
-			queryClient.setQueryData(['/api/ideas'], (old: Idea[]) => [
-				...old,
-				{ ...newIdea, creator: member?.name },
-			]);
-		},
-		onSettled: async () => {
-			navigate('/dashboard');
-		},
-	});
-
 	return (
 		<RequireAuth>
-			<Header heading="Add an idea" />
-			<div>
-				<form
-					action={api.toString()}
-					method="POST"
-					onSubmit={(e) => {
-						e.preventDefault();
-
-						const data = new FormData(e.currentTarget);
-						const text = data.get('text') as string;
-
-						if (!text) {
-							console.log('oh no');
-							return;
-						}
-
-						addIdea.mutate({ text });
-					}}
-				>
-					<label htmlFor="text">Idea</label>
-					<input id="text" name="text" type="text" required />
-
-					<button type="submit">Add Idea</button>
-				</form>
-			</div>
+			<Pages.AddIdea member={member} />
 		</RequireAuth>
 	);
 };
 
+/**
+ * For more complicated and/or custom actions, you may need to access the
+ * Stytch B2B client SDK directly. The {@link useStytchB2BClient} hook will
+ * return the SDK client.
+ *
+ * If the UI allows members to perform actions that require specific roles,
+ * use the {@link useStytchIsAuthorized} hook to verify that the current member
+ * has the correct permissions.
+ *
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/rbac#is-authorized
+ */
 const DashboardTeamMembers = () => {
 	const stytch = useStytchB2BClient();
-	const invite = useStytchIsAuthorized('stytch.member', 'create');
 	const { session } = useStytchMemberSession();
-	const queryClient = useQueryClient();
-	const [pending, setPending] = useState<string>();
-	const [inviteMessage, setInviteMessage] = useState<string>();
+	const invite = useStytchIsAuthorized('stytch.member', 'create');
+
+	if (!session) {
+		return null;
+	}
+
+	/*
+	 * This function is called inside a loop, so we curry it to use the current
+	 * member being looped over and return an event handler to update that
+	 * member’s assigned roles.
+	 */
+	const updateMemberRole = async (member: any) => {
+		const roles = new Set(member.roles);
+
+		/**
+		 * @see https://stytch.com/docs/b2b/guides/rbac/role-assignment
+		 */
+		if (member.roles.includes('admin')) {
+			roles.delete('admin');
+		} else {
+			roles.add('admin');
+		}
+
+		/**
+		 * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/members#update-member
+		 */
+		return stytch.organization.members.update({
+			member_id: member.id,
+			roles: [...roles.values()] as string[],
+		});
+	};
+
+	/*
+	 * Allow members to invite new people to the organization via email.
+	 */
+	const inviteNewMember = async (email: string) => {
+		if (!invite.isAuthorized) {
+			throw new Error('Unauthorized to invite new members');
+		}
+
+		/**
+		 * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/email-magic-links#invite
+		 */
+		return await stytch.magicLinks.email.invite({
+			email_address: email,
+		});
+	};
 
 	return (
 		<RequireAuth>
-			<PageWithQuery
-				heading="Team Members"
-				apiRoute="/api/team"
-				staleTime={1000 * 60}
-			>
-				{({ data }) => {
-					if (data.message === 'Unauthorized') {
-						return (
-							<div>
-								<p>You don’t have permission to see this information.</p>
-							</div>
-						);
-					}
-
-					return (
-						<div className={styles.teamMembers}>
-							<ul>
-								{data.members.map((member: any) => {
-									const isAdmin = member.roles.includes('admin');
-									let buttonText = isAdmin
-										? 'revoke admin role'
-										: 'grant admin role';
-
-									if (pending === member.id) {
-										buttonText = 'updating...';
-									}
-
-									return (
-										<li key={member.id}>
-											{member.name} ({member.email})
-											<span
-												className={styles.memberStatus}
-												data-status={member.status}
-											>
-												{member.status}
-											</span>
-											<span className={styles.memberRoles}>
-												{member.roles.join(', ')}
-											</span>
-											{session?.roles.includes('admin') ? (
-												<button
-													onClick={(e) => {
-														e.preventDefault();
-														setPending(member.id);
-
-														const roles = new Set(member.roles);
-
-														if (isAdmin) {
-															roles.delete('admin');
-														} else {
-															roles.add('admin');
-														}
-
-														stytch.organization.members.update({
-															member_id: member.id,
-															roles: [...roles.values()] as string[],
-														});
-
-														setTimeout(async () => {
-															await queryClient.invalidateQueries({
-																queryKey: ['/api/team'],
-															});
-
-															setPending(undefined);
-														}, 1000);
-													}}
-												>
-													{buttonText}
-												</button>
-											) : null}
-										</li>
-									);
-								})}
-							</ul>
-
-							{inviteMessage ? (
-								<div className={styles.inviteMessage}>
-									<p>{inviteMessage}</p>
-								</div>
-							) : null}
-
-							{data.meta.invites_allowed && invite.isAuthorized ? (
-								<>
-									<h2>Invite a new team member</h2>
-									<form
-										onSubmit={async (e) => {
-											e.preventDefault();
-											const formData = new FormData(e.currentTarget);
-											const email = formData.get('email') as string;
-
-											const data = await stytch.magicLinks.email.invite({
-												email_address: email,
-											});
-
-											console.log(data);
-
-											setInviteMessage(`Invite sent to ${email}`);
-											queryClient.invalidateQueries({
-												queryKey: ['/api/team'],
-											});
-										}}
-									>
-										<label htmlFor="email">Email</label>
-										<input type="email" name="email" id="email" required />
-
-										<button type="submit">Invite</button>
-									</form>
-								</>
-							) : null}
-
-							<details>
-								<summary>Debug info:</summary>
-								<p>
-									Team members are loaded from{' '}
-									<a href="https://stytch.com/docs/b2b/api/search-members">
-										https://stytch.com/docs/b2b/api/search-members
-									</a>
-								</p>
-								<pre>{JSON.stringify(data, null, 2)}</pre>
-							</details>
-						</div>
-					);
-				}}
-			</PageWithQuery>
+			<Pages.TeamMembers
+				isAdmin={session.roles.includes('admin')}
+				isAuthorizedToInvite={invite.isAuthorized}
+				updateMemberRole={updateMemberRole}
+				inviteNewMember={inviteNewMember}
+			/>
 		</RequireAuth>
 	);
 };
 
 const DashboardTeamSettings = () => {
+	/**
+	 * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/rbac#is-authorized
+	 */
 	const jit = useStytchIsAuthorized(
 		'stytch.organization',
 		'update.settings.sso-jit-provisioning',
@@ -511,267 +323,26 @@ const DashboardTeamSettings = () => {
 		'stytch.organization',
 		'update.settings.allowed-auth-methods',
 	);
-	const isAuthorizedForAnySetting =
-		jit.isAuthorized ||
-		invites.isAuthorized ||
-		allowedDomains.isAuthorized ||
-		allowedAuthMethods.isAuthorized;
-	const api = new URL('/api/team-settings', import.meta.env.PUBLIC_API_URL);
 
 	return (
 		<RequireAuth>
-			<PageWithQuery heading="Team Settings" apiRoute="/api/team-settings">
-				{({ data }) => {
-					return (
-						<div>
-							<form action={api.toString()} method="POST">
-								<label htmlFor="invites">
-									<input
-										type="checkbox"
-										name="email_invites"
-										id="invites"
-										defaultChecked={data.email_invites === 'ALL_ALLOWED'}
-										disabled={!invites.isAuthorized}
-									/>
-									Allow all team members to invite new members
-								</label>
-
-								<label htmlFor="jit">
-									<input
-										type="checkbox"
-										name="email_jit_provisioning"
-										id="jit"
-										defaultChecked={
-											data.email_jit_provisioning === 'RESTRICTED'
-										}
-										disabled={!jit.isAuthorized}
-									/>
-									Allow JIT provisioning for allowed email domains
-								</label>
-
-								<label htmlFor="allowed_domains">
-									Allowed domains for invites
-								</label>
-								<input
-									type="text"
-									name="email_allowed_domains"
-									id="allowed_domains"
-									defaultValue={data.email_allowed_domains?.join(', ') ?? ''}
-									disabled={!allowedDomains.isAuthorized}
-								/>
-
-								<fieldset>
-									<legend>
-										Allow team members to sign in with the following auth
-										methods:
-									</legend>
-
-									{[
-										{ name: 'sso', label: 'SSO' },
-										{ name: 'magic_link', label: 'Magic Link' },
-										{ name: 'password', label: 'Password' },
-										{ name: 'google_oauth', label: 'Google OAuth' },
-										{ name: 'microsoft_oauth', label: 'Microsoft OAuth' },
-									].map(({ name, label }) => (
-										<label key={`auth_method_${name}`} htmlFor={name}>
-											<input
-												type="checkbox"
-												name="allowed_auth_methods"
-												id={name}
-												value={name}
-												defaultChecked={
-													data.auth_methods === 'ALL_ALLOWED' ||
-													data.allowed_auth_methods.includes(name)
-												}
-												disabled={!allowedAuthMethods.isAuthorized}
-											/>
-											{label}
-										</label>
-									))}
-								</fieldset>
-
-								{isAuthorizedForAnySetting ? (
-									<button type="submit">Update Team Settings</button>
-								) : null}
-							</form>
-
-							<details>
-								<summary>Debug info:</summary>
-								<p>
-									Organization settings are loaded from{' '}
-									<a href="https://stytch.com/docs/b2b/api/org-auth-settings">
-										https://stytch.com/docs/b2b/api/org-auth-settings
-									</a>
-								</p>
-								<pre>{JSON.stringify(data, null, 2)}</pre>
-							</details>
-						</div>
-					);
+			<Pages.TeamSettings
+				isAuthorized={{
+					jit: jit.isAuthorized,
+					invites: invites.isAuthorized,
+					allowedDomains: allowedDomains.isAuthorized,
+					allowedAuthMethods: allowedAuthMethods.isAuthorized,
 				}}
-			</PageWithQuery>
+			/>
 		</RequireAuth>
 	);
 };
 
-const DashboardAccount = () => {
-	const api = new URL('/api/account', import.meta.env.PUBLIC_API_URL);
-
-	return (
-		<RequireAuth>
-			<PageWithQuery heading="Account Settings" apiRoute="/api/account">
-				{({ data }) => {
-					return (
-						<div>
-							<form action={api.toString()} method="POST">
-								<label htmlFor="name">Display Name</label>
-								<input
-									type="text"
-									name="name"
-									id="name"
-									defaultValue={data.name ?? ''}
-								/>
-
-								<button type="submit">Update Display Name</button>
-							</form>
-
-							<details>
-								<summary>Debug info:</summary>
-								<p>
-									Account settings are loaded from{' '}
-									<a href="https://stytch.com/docs/b2b/api/get-member">
-										https://stytch.com/docs/b2b/api/get-member
-									</a>
-								</p>
-								<pre>{JSON.stringify(data, null, 2)}</pre>
-							</details>
-						</div>
-					);
-				}}
-			</PageWithQuery>
-		</RequireAuth>
-	);
-};
-
-const DashboardLogin = () => {
-	const apiUrl = import.meta.env.PUBLIC_API_URL;
-	const emailDiscovery = new URL('/auth/discovery/email', apiUrl);
-	const googleOauth = new URL('/auth/discovery/google', apiUrl);
-	const microsoftOauth = new URL('/auth/discovery/microsoft', apiUrl);
-	const [message, setMessage] = useState<string>();
-
-	const startEmailDiscovery = useMutation({
-		mutationFn: ({ email_address }: { email_address: string }) => {
-			const data = new URLSearchParams();
-			data.append('email_address', email_address);
-
-			return fetch(emailDiscovery, {
-				method: 'post',
-				body: data,
-				credentials: 'include',
-			}).then((res) => res.json());
-		},
-		onSettled: async (data) => {
-			setMessage(data.message);
-		},
-	});
-
-	return (
-		<>
-			<Header heading="Sign Up or Log In" />
-
-			<div className={styles.loginSection}>
-				{message ? <div className={styles.loginMessage}>{message}</div> : null}
-
-				<form
-					onSubmit={(e) => {
-						e.preventDefault();
-
-						const data = new FormData(e.currentTarget);
-						const email_address = data.get('email_address') as string;
-
-						if (!email_address) {
-							setMessage('Please provide an email address.');
-							return;
-						}
-
-						startEmailDiscovery.mutate({ email_address });
-					}}
-				>
-					<label htmlFor="email">Email</label>
-					<input type="email" name="email_address" id="email" required />
-
-					<button type="submit">Sign Up / Log In</button>
-				</form>
-
-				<a href={googleOauth.toString()}>Log in with Google</a>
-				<a href={microsoftOauth.toString()}>Log in with Microsoft</a>
-			</div>
-		</>
-	);
-};
-
-const DashboardRegister = () => {
-	const location = useLocation();
-	const api = new URL('/auth/register', import.meta.env.PUBLIC_API_URL);
-	const token = getCookie('intermediate_token');
-
-	if (!token || token.length < 1) {
-		return (
-			<Navigate to="/dashboard/login" state={{ from: location }} replace />
-		);
-	}
-
-	return (
-		<>
-			<Header heading="Create a Team" />
-
-			<div>
-				<form action={api.toString()} method="POST" className="login-section">
-					<label htmlFor="org">Create a Team</label>
-					<input id="org" name="organization" />
-
-					<button type="submit">Create Team</button>
-				</form>
-			</div>
-		</>
-	);
-};
-
-const DashboardSelectTeam = () => {
-	const api = new URL('/auth/register', import.meta.env.PUBLIC_API_URL);
-	const orgs = JSON.parse(getCookie('discovered_orgs'));
-
-	return (
-		<>
-			<Header heading="Choose a Team" />
-
-			<div>
-				{orgs.length > 0 ? (
-					<div className={styles.availableTeams}>
-						{orgs.map((org: any) => {
-							const url = new URL(
-								'/auth/select-team',
-								import.meta.env.PUBLIC_API_URL,
-							);
-							url.searchParams.set('org_id', org.id);
-
-							return <a href={url.toString()}>{org.name}</a>;
-						})}
-					</div>
-				) : null}
-
-				<p>or</p>
-
-				<form action={api.toString()} method="POST" className="login-section">
-					<label htmlFor="team">Create a Team</label>
-					<input id="team" name="organization" type="text" />
-
-					<button type="submit">Create Team</button>
-				</form>
-			</div>
-		</>
-	);
-};
+const DashboardAccount = () => (
+	<RequireAuth>
+		<Pages.Account />
+	</RequireAuth>
+);
 
 const Router = () => {
 	return (
@@ -783,17 +354,20 @@ const Router = () => {
 				<Route path="team-settings" element={<DashboardTeamSettings />} />
 				<Route path="account" element={<DashboardAccount />} />
 
-				<Route path="select-team" element={<DashboardSelectTeam />} />
+				<Route path="select-team" element={<Pages.SelectTeam />} />
 
-				<Route path="login" element={<DashboardLogin />} />
-				<Route path="register" element={<DashboardRegister />} />
+				<Route path="login" element={<Pages.Login />} />
 
-				<Route path="*" element={<DashboardLogin />} />
+				{/* for any other route, bounce to the login page */}
+				<Route path="*" element={<Pages.Login />} />
 			</Route>
 		</Routes>
 	);
 };
 
+/**
+ * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/installation
+ */
 const stytchClient = new StytchB2BHeadlessClient(
 	import.meta.env.PUBLIC_STYTCH_TOKEN,
 );
@@ -807,8 +381,6 @@ export const App = () => {
 					<BrowserRouter>
 						<Router />
 					</BrowserRouter>
-
-					<ReactQueryDevtools initialIsOpen={false} />
 				</QueryClientProvider>
 			</StytchB2BProvider>
 		</React.StrictMode>
