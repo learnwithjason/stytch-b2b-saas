@@ -114,32 +114,20 @@ const OrgSwitcher = () => {
  * @see https://stytch.com/docs/b2b/sdks/javascript-sdk/session-management#get-session
  */
 function RequireAuth({ children }: { children: React.ReactNode }) {
-	const { session } = useStytchMemberSession();
-	const [redirectTimeout, setRedirectTimeout] = useState<number>();
+	const { session, fromCache } = useStytchMemberSession();
 	const navigate = useNavigate();
 	let location = useLocation();
 
-	// TODO should be able to use an isInitialized flag here
 	useEffect(() => {
 		if (!session) {
-			const timeoutId = setTimeout(() => {
-				navigate('/dashboard/login', {
-					state: {
-						from: location,
-					},
-					replace: true,
-				});
-			}, 1000);
-
-			setRedirectTimeout((prevId) => {
-				clearInterval(prevId);
-				return timeoutId;
+			navigate('/dashboard/login', {
+				state: {
+					from: location,
+				},
+				replace: true,
 			});
-		} else {
-			clearTimeout(redirectTimeout);
-			setRedirectTimeout(undefined);
 		}
-	}, [session]);
+	}, [fromCache, session]);
 
 	return session ? children : null;
 }
