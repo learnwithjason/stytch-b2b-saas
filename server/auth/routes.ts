@@ -1,13 +1,13 @@
+import { Router } from 'express';
 import type {
+	B2BMagicLinksAuthenticateResponse,
 	B2BMagicLinksDiscoveryAuthenticateResponse,
 	B2BOAuthDiscoveryAuthenticateResponse,
-	B2BMagicLinksAuthenticateResponse,
 } from 'stytch';
-import { Router } from 'express';
 import {
-	loadStytch,
-	exchangeIntermediateToken,
 	cookieOptions,
+	exchangeIntermediateToken,
+	loadStytch,
 	stytchEnv,
 } from './index.js';
 
@@ -203,3 +203,40 @@ auth.get('/logout', async (req, res) => {
 
 	res.redirect(new URL('/dashboard/login', process.env.APP_URL).toString());
 });
+
+/*
+ * If no organization exists:
+ * Step 3: create a new organization for the user
+ * B2B apps are org-first, so users MUST create or join an organization as part
+ * of signup.
+ */
+
+auth.post('/register', async (req, res) => {
+	const stytch = loadStytch();
+	const token = req.cookies.intermediate_token;
+	const organization = req.body.organization;
+	const slug = organization
+		.trim()
+		.toLowerCase()
+		.replace(/[\s+~\/]/g, '-')
+		.replace(/[().`,%·'"!?¿:@*]/g, '');
+
+    const result = await stytch.discovery.organizations.create({
+		intermediate_session_token: token,
+		organization_name: organization,
+		organization_slug: slug,
+	});
+
+	// TODO add the required resources and roles to the new organization
+
+	res.clearCookie('intermediate_token');
+
+	res.cookie('stytch_member_id', result.member.member_id, { path: '/' });
+	res.cookie('stytch_org_id', result.organization?.organization_id, {
+		path: '/',
+	});
+	res.cookie('stytch_session', result.session_token, { path: '/' });
+	res.cookie('stytch_session_jwt', result.session_jwt, { path: '/' });
+
+	res.redirect(303, new URL('/dashboard', process.env.APP_URL).toString());
+});		
