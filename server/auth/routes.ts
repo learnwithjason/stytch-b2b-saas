@@ -187,6 +187,44 @@ auth.post('/switch-team', async (req, res) => {
 });
 
 /**
+ * If the user chooses to create a new organization in the discovery flow, we
+ * handle that here. This will create the new account and exchange the
+ * intermediate token at the same time.
+ *
+ * @see https://stytch.com/docs/b2b/api/create-organization-via-discovery
+ */
+auth.post('/register', async (req, res) => {
+	const token = req.cookies.intermediate_token;
+	const organization = req.body.organization;
+	const slug = organization
+		.trim()
+		.toLowerCase()
+		.replace(/[\s+~\/]/g, '-')
+		.replace(/[().`,%·'"!?¿:@*]/g, '');
+
+	const stytch = loadStytch();
+
+	const result = await stytch.discovery.organizations.create({
+		intermediate_session_token: token,
+		organization_name: organization,
+		organization_slug: slug,
+	});
+
+	res.clearCookie('intermediate_token');
+
+	res.cookie('stytch_member_id', result.member.member_id, cookieOptions);
+	res.cookie(
+		'stytch_org_id',
+		result.organization?.organization_id,
+		cookieOptions,
+	);
+	res.cookie('stytch_session', result.session_token, cookieOptions);
+	res.cookie('stytch_session_jwt', result.session_jwt, cookieOptions);
+
+	res.redirect(303, new URL('/dashboard', process.env.APP_URL).toString());
+});
+
+/**
  * Revoke all sessions for the current member and clear cookies.
  *
  * @see https://stytch.com/docs/b2b/api/revoke-session
