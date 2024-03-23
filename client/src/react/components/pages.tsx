@@ -540,7 +540,11 @@ export const SelectTeam = () => {
 							);
 							url.searchParams.set('org_id', org.id);
 
-							return <a href={url.toString()}>{org.name}</a>;
+							return (
+								<a href={url.toString()} key={org.id}>
+									{org.name}
+								</a>
+							);
 						})}
 					</div>
 				) : null}
