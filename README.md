@@ -92,6 +92,23 @@ PUBLIC_API_URL="http://localhost:3000"
 PUBLIC_STYTCH_TOKEN=""
 ```
 
+## Create the required resources and roles
+
+For the app to work properly, we need to create custom resources and roles. This allows the app to use [Stytch's RBAC](https://stytch.com/docs/b2b/guides/rbac/getting-started) to manage permissions for app-specific actions.
+
+In your Stytch dashboard, [create a resource](https://stytch.com/dashboard/rbac?env=test&type=Resources) called `idea`. Give the `idea` resource the following actions:
+
+- `create`
+- `delete`
+- `read`
+- `update`
+
+![the idea resource in the Stytch dashboard](https://res.cloudinary.com/jlengstorf/image/upload/f_auto,q_auto/v1711165841/oss/stytch-resources.jpg)
+
+Next, [create a new role](https://stytch.com/dashboard/rbac?env=test&type=Roles) called `admin` and assign the permissions for the `idea` resource and `*` to allow all actions.
+
+![the admin role in the Stytch dashboard](https://res.cloudinary.com/jlengstorf/image/upload/f_auto,q_auto/v1711165841/oss/stytch-roles.jpg)
+
 ## Start the client and server
 
 In one terminal, start the server:
