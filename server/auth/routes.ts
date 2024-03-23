@@ -210,14 +210,24 @@ auth.post('/register', async (req, res) => {
 		organization_slug: slug,
 	});
 
+	const organization_id = result.organization?.organization_id;
+	const member_id = result.member.member_id;
+
+	if (result.status_code !== 200 || typeof organization_id !== 'string') {
+		throw new Error('Unable to create organization');
+	}
+
+	// Since this member created the organization, assign the admin role
+	await stytch.organizations.members.update({
+		organization_id,
+		member_id,
+		roles: ['admin', 'stytch_admin'],
+	});
+
 	res.clearCookie('intermediate_token');
 
-	res.cookie('stytch_member_id', result.member.member_id, cookieOptions);
-	res.cookie(
-		'stytch_org_id',
-		result.organization?.organization_id,
-		cookieOptions,
-	);
+	res.cookie('stytch_member_id', member_id, cookieOptions);
+	res.cookie('stytch_org_id', organization_id, cookieOptions);
 	res.cookie('stytch_session', result.session_token, cookieOptions);
 	res.cookie('stytch_session_jwt', result.session_jwt, cookieOptions);
 
